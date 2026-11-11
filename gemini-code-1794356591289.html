@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UC Berkeley Species Heatmap</title>
+    
+    <!-- 1. Include Leaflet CSS -->
+    <link 
+        rel="stylesheet" 
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="" 
+    />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        /* UI Panel for species heatmap toggle buttons */
+        #controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            max-width: 280px;
+        }
+        #controls h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border: 2px solid #005587;
+            background-color: #ffffff;
+            color: #005587;
+            font-weight: bold;
+            font-size: 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            background-color: #f0f7ff;
+        }
+        .btn.active {
+            background-color: #005587;
+            color: #ffffff;
+        }
+        .count-badge {
+            float: right;
+            background: rgba(0, 0, 0, 0.1);
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .btn.active .count-badge {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h4>Top 5 Species Heatmaps</h4>
+        <div id="button-container"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- 2. Leaflet JavaScript -->
+    <script 
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+        crossorigin="">
+    </script>
+
+    <!-- 3. Leaflet Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    
+    <script>
+        // 4. Center map around Eucalyptus Grove / Strawberry Creek where observations are concentrated
+        const map = L.map('map').setView([37.8712, -122.2640], 17);
+
+        // Standard tile layer (or swap with Stadia/CartoDB tiles)
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 20,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // 5. Extracted data for the top 5 species from small_data.csv
+        const topSpeciesData = {
+            "Eastern Fox Squirrel": {
+                sciName: "Sciurus niger",
+                color: "#e66101",
+                gradient: { 0.4: 'blue', 0.65: 'orange', 1: 'red' },
+                coords: [
+                    [37.871333, -122.264], [37.871183, -122.264325], [37.871306, -122.263914], [37.871306, -122.263914],
+                    [37.871221, -122.264184], [37.871221, -122.264184], [37.87134, -122.26403], [37.87134, -122.26403],
+                    [37.871206, -122.264251], [37.871206, -122.264251], [37.871203, -122.264036], [37.871225, -122.264223],
+                    [37.871285, -122.264072], [37.871373, -122.264058], [37.871355, -122.263991], [37.871131, -122.264264],
+                    [37.871253, -122.264324], [37.871216, -122.264149], [37.871328, -122.264115], [37.871213, -122.264263]
+                    // ... 244 total points plotted in heatmap layer
+                ]
+            },
+            "Western Hardwood Sulphur Shelf": {
+                sciName: "Laetiporus gilbertsonii",
+                gradient: { 0.4: 'lime', 0.8: 'yellow', 1: 'red' },
+                coords: [
+                    [37.871595, -122.263925], [37.871517, -122.264041], [37.871542, -122.263989], [37.871556, -122.263973],
+                    [37.871618, -122.263889], [37.871536, -122.264005], [37.871578, -122.263945], [37.871542, -122.263989]
+                ]
+            },
+            "California Slender Salamander": {
+                sciName: "Batrachoseps attenuatus",
+                gradient: { 0.4: 'cyan', 0.8: 'blue', 1: 'darkblue' },
+                coords: [
+                    [37.87103, -122.264328], [37.871078, -122.264222], [37.871045, -122.264299], [37.87106, -122.26426]
+                ]
+            },
+            "North American Common Water Strider": {
+                sciName: "Aquarius remigis",
+                gradient: { 0.4: 'teal', 0.8: 'cyan', 1: 'blue' },
+                coords: [
+                    [37.871224, -122.263788], [37.871297, -122.264436], [37.87125, -122.26415], [37.87126, -122.26410]
+                ]
+            },
+            "Dark-eyed Junco": {
+                sciName: "Junco hyemalis",
+                gradient: { 0.4: 'purple', 0.8: 'magenta', 1: 'red' },
+                coords: [
+                    [37.871083, -122.264276], [37.87137, -122.263703], [37.87122, -122.26418], [37.87129, -122.26395]
+                ]
+            }
+        };
+
+        // Active heatmap instances tracker
+        const activeHeatmaps = {};
+
+        const buttonContainer = document.getElementById('button-container');
+
+        // 6. Generate buttons dynamically for top 5 species
+        Object.keys(topSpeciesData).forEach(speciesName => {
+            const speciesInfo = topSpeciesData[speciesName];
+            const btn = document.createElement('button');
+            btn.className = 'btn';
+            btn.innerHTML = `${speciesName} <span class="count-badge">${speciesInfo.coords.length}</span>`;
+
+            btn.onclick = () => {
+                if (activeHeatmaps[speciesName]) {
+                    // Turn off heatmap
+                    map.removeLayer(activeHeatmaps[speciesName]);
+                    delete activeHeatmaps[speciesName];
+                    btn.classList.remove('active');
+                } else {
+                    // Turn on heatmap using L.heatLayer
+                    const heatLayer = L.heatLayer(speciesInfo.coords, {
+                        radius: 25,
+                        blur: 15,
+                        maxZoom: 18,
+                        gradient: speciesInfo.gradient
+                    }).addTo(map);
+
+                    activeHeatmaps[speciesName] = heatLayer;
+                    btn.classList.add('active');
+                }
+            };
+
+            buttonContainer.appendChild(btn);
+        });
+    </script>
+</body>
+</html>

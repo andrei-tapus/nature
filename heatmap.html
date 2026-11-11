@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UC Berkeley Species Heatmap</title>
+    
+    <!-- 1. Leaflet CSS -->
+    <link 
+        rel="stylesheet" 
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="" 
+    />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        /* UI Control Panel */
+        #controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(6px);
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+            width: 320px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        #controls h4 {
+            margin: 0 0 4px 0;
+            font-size: 15px;
+            color: #222;
+        }
+        #controls p {
+            margin: 0 0 12px 0;
+            font-size: 11px;
+            color: #666;
+        }
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border: 2px solid #e0e0e0;
+            background-color: #ffffff;
+            color: #333;
+            font-weight: 600;
+            font-size: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        .btn:hover {
+            border-color: #005587;
+            background-color: #f0f7ff;
+        }
+        .btn.active {
+            border-color: #005587;
+            background-color: #005587;
+            color: #fff;
+        }
+        .btn-left {
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+        /* Species thumbnail image alongside button */
+        .species-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            object-fit: cover;
+            margin-right: 10px;
+            flex-shrink: 0;
+            background-color: #eee;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        .species-info {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .common-name {
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .scientific-name {
+            font-size: 10px;
+            font-style: italic;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .count-badge {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .btn.active .count-badge {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+        #loading {
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+        }
+        #controls::-webkit-scrollbar {
+            width: 6px;
+        }
+        #controls::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h4>Top 10 Campus Species</h4>
+        <p>Select a species to view its heatmap (one active at a time)</p>
+        <div id="loading">Loading CSV data...</div>
+        <div id="button-container"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- 2. Leaflet JavaScript -->
+    <script 
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="">
+    </script>
+
+    <!-- 3. Leaflet Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+
+    <!-- 4. PapaParse for Dynamic CSV Processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <script>
+        // Initialize Leaflet Map centered on UC Berkeley campus
+        const map = L.map('map').setView([37.8712, -122.2640], 17);
+
+        // Base tile layer: Stadia Maps Stamen Watercolor
+        L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?', {
+            maxZoom: 18,
+            opacity: 0.6,
+            attribution: '&copy; <a href="https://stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://stamen.com/" target="_blank">Stamen Design</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // Heatmap layer storage and single active species tracker
+        const speciesHeatmaps = {};
+        let currentActiveSpecies = null;
+
+        // Visual gradients for heatmaps
+        const heatmapGradients = [
+            { 0.4: 'blue', 0.65: 'lime', 1: 'red' },
+            { 0.4: 'purple', 0.65: 'magenta', 1: 'yellow' },
+            { 0.4: 'darkgreen', 0.65: 'orange', 1: 'red' },
+            { 0.4: 'navy', 0.65: 'cyan', 1: 'white' },
+            { 0.4: '#440154', 0.65: '#21908d', 1: '#fde725' },
+            { 0.4: 'maroon', 0.65: 'crimson', 1: 'gold' },
+            { 0.4: 'teal', 0.65: 'lightgreen', 1: 'yellow' },
+            { 0.4: 'indigo', 0.65: 'violet', 1: 'pink' },
+            { 0.4: '#000066', 0.65: '#ff0066', 1: '#ffff66' },
+            { 0.4: 'darkblue', 0.65: 'turquoise', 1: 'lightyellow' }
+        ];
+
+
+        // Fetch CSV data
+        const csvFile = 'big_data.csv';
+        Papa.parse(csvFile, {
+            download: true,
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                document.getElementById('loading').style.display = 'none';
+                processCSVData(results.data);
+            },
+            error: function() {
+                // Fallback attempt to small_data.csv if big_data.csv is absent
+                Papa.parse('data/small_data.csv', {
+                    download: true,
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: function(results) {
+                        document.getElementById('loading').style.display = 'none';
+                        processCSVData(results.data);
+                    },
+                    error: function(err) {
+                        document.getElementById('loading').innerText = 'Error loading CSV data file.';
+                        console.error(err);
+                    }
+                });
+            }
+        });
+
+        async function processCSVData(data) {
+            const speciesCounts = {};
+            const speciesRecords = {};
+
+            // Group observations by species
+            data.forEach(row => {
+                const name = row.common_name || row.scientific_name;
+                const lat = parseFloat(row.latitude);
+                const lng = parseFloat(row.longitude);
+
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    if (!speciesCounts[name]) {
+                        speciesCounts[name] = 0;
+                        speciesRecords[name] = [];
+                    }
+                    speciesCounts[name]++;
+                    speciesRecords[name].push(row);
+                }
+            });
+
+            // Extract Top 10 species by total count
+            const top10Species = Object.keys(speciesCounts)
+                .sort((a, b) => speciesCounts[b] - speciesCounts[a])
+                .slice(0, 10);
+
+            const buttonContainer = document.getElementById('button-container');
+
+            // Build heatmap layers and buttons
+            for (let i = 0; i < top10Species.length; i++) {
+                const speciesName = top10Species[i];
+                const records = speciesRecords[speciesName];
+                const sciName = records[0]?.scientific_name || '';
+                const fallbackImg = records.find(r => r.image_url)?.image_url || '';
+
+                // Extract coordinates for L.heatLayer
+                const heatCoords = records.map(r => [parseFloat(r.latitude), parseFloat(r.longitude)]);
+
+                // Create Heatmap layer
+                const heatLayer = L.heatLayer(heatCoords, {
+                    radius: 25,
+                    blur: 15,
+                    maxZoom: 18,
+                    gradient: heatmapGradients[i % heatmapGradients.length]
+                });
+
+                speciesHeatmaps[speciesName] = heatLayer;
+
+                // Create UI button with thumbnail space
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+
+                btn.innerHTML = `
+                    <div class="btn-left">
+                        <img class="species-img" src="https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg" alt="${speciesName}" />
+                        <div class="species-info">
+                            <span class="common-name">${speciesName}</span>
+                            <span class="scientific-name">${sciName}</span>
+                        </div>
+                    </div>
+                    <span class="count-badge">${records.length}</span>
+                `;
+
+                // Asynchronously fetch and display species picture from Wikispecies
+                fetchSpeciesImage(sciName, fallbackImg).then(imgUrl => {
+                    const imgEl = btn.querySelector('.species-img');
+                    if (imgEl && imgUrl) {
+                        imgEl.src = imgUrl;
+                    }
+                });
+
+                // Single active map toggle logic (resets other maps)
+                btn.onclick = () => {
+                    const isCurrentlyActive = (currentActiveSpecies === speciesName);
+
+                    // 1. Reset all active heatmap layers and button highlights
+                    Object.keys(speciesHeatmaps).forEach(name => {
+                        if (map.hasLayer(speciesHeatmaps[name])) {
+                            map.removeLayer(speciesHeatmaps[name]);
+                        }
+                    });
+                    document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+
+                    // 2. Activate only the selected species heatmap if it was not already active
+                    if (!isCurrentlyActive) {
+                        speciesHeatmaps[speciesName].addTo(map);
+                        btn.classList.add('active');
+                        currentActiveSpecies = speciesName;
+                    } else {
+                        currentActiveSpecies = null;
+                    }
+                };
+
+                buttonContainer.appendChild(btn);
+            }
+        }
+    </script>
+</body>
+</html>
