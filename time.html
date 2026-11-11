@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UC Berkeley Species Temporal Animation</title>
+    
+    <!-- Leaflet CSS -->
+    <link 
+        rel="stylesheet" 
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="" 
+    />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        /* UI Control Panel */
+        #controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(6px);
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+            width: 320px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        #controls h4 {
+            margin: 0 0 4px 0;
+            font-size: 15px;
+            color: #222;
+        }
+        #controls p {
+            margin: 0 0 12px 0;
+            font-size: 11px;
+            color: #666;
+        }
+
+        /* Timeline Box */
+        #timeline-panel {
+            background: #f4f4f6;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border: 1px solid #e1e1e6;
+        }
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+        #timeline-slider {
+            width: 100%;
+            margin: 4px 0;
+            cursor: pointer;
+        }
+
+        /* Species Buttons */
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border: 2px solid #e0e0e0;
+            background-color: #ffffff;
+            color: #333;
+            font-weight: 600;
+            font-size: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        .btn:hover {
+            border-color: #005587;
+            background-color: #f0f7ff;
+        }
+        .btn.active {
+            border-color: #005587;
+            background-color: #005587;
+            color: #fff;
+        }
+        .btn-left {
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+        .species-img {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            object-fit: cover;
+            margin-right: 10px;
+            flex-shrink: 0;
+            background-color: #eee;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        .species-info {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .common-name {
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .scientific-name {
+            font-size: 10px;
+            font-style: italic;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .count-badge {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .btn.active .count-badge {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+        #loading {
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <h4>UC Berkeley Species Timeline</h4>
+        <p>Click a species to play its 366-day observation decay animation.</p>
+
+        <!-- Timeline Display Controls -->
+        <div id="timeline-panel">
+            <div class="timeline-header">
+                <span>Timeline (366 Days)</span>
+                <span id="day-display">Day 1</span>
+            </div>
+            <input type="range" id="timeline-slider" min="1" max="366" value="1" step="1">
+        </div>
+
+        <div id="loading">Loading CSV data...</div>
+        <div id="button-container"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script 
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+        crossorigin="">
+    </script>
+
+    <!-- PapaParse CSV Reader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <script>
+        // Map setup
+        const map = L.map('map').setView([37.8712, -122.2640], 17);
+
+        // Stadia Maps Stamen Watercolor Base Layer
+        L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key=YOUR-API-KEY', {
+            maxZoom: 18,
+            opacity: 0.65,
+            className: 'watercolor_map',
+            attribution: '&copy; <a href="https://stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://stamen.com/" target="_blank">Stamen Design</a>'
+        }).addTo(map);
+
+        // Colors per species
+        const speciesColors = ['#d95f02', '#7570b3', '#e7298a', '#2b83ba', '#abdda4', '#e6ab02', '#a6761d', '#666666', '#1b9e77', '#d9381e'];
+
+        // Animation State Variables
+        let activeMarkers = [];
+        let animationFrameId = null;
+        let currentDay = 1;
+        let activeSpecies = null;
+        
+        // Configuration: A dot stays visible for 30 days while decaying
+        const DECAY_DAYS = 45; 
+        const ANIMATION_SPEED = 2; // Days per animation frame
+
+        const dayDisplay = document.getElementById('day-display');
+        const timelineSlider = document.getElementById('timeline-slider');
+
+        // Helper: Convert Date String to Day of Year (1 - 366)
+        function getDayOfYear(dateStr, fallbackId) {
+            if (dateStr) {
+                const date = new Date(dateStr);
+                if (!isNaN(date.getTime())) {
+                    const start = new Date(date.getFullYear(), 0, 0);
+                    const diff = date - start;
+                    const oneDay = 1000 * 60 * 60 * 24;
+                    return Math.floor(diff / oneDay);
+                }
+            }
+            // Deterministic fallback spread across 366 days if no date column exists in CSV row
+            return ((Math.abs(fallbackId || 0) * 37) % 366) + 1;
+        }
+
+        // Helper: Fetch image from Wikispecies / Wikipedia
+        async function fetchSpeciesImage(sciName, fallbackImg) {
+            if (sciName) {
+                try {
+                    const url = `https://species.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(sciName)}&prop=pageimages&pithumbsize=100&redirects=1&format=json&origin=*`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const pages = data?.query?.pages;
+                    if (pages) {
+                        for (const k in pages) {
+                            if (pages[k]?.thumbnail?.source) return pages[k].thumbnail.source;
+                        }
+                    }
+                } catch (e) {}
+            }
+            return fallbackImg || 'https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg';
+        }
+
+        // Stop current animation loop and clear map markers
+        function clearActiveAnimation() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            activeMarkers.forEach(item => map.removeLayer(item.marker));
+            activeMarkers = [];
+            activeSpecies = null;
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+        }
+
+        // Main Animation Runner
+        function startSpeciesAnimation(speciesName, records, color) {
+            clearActiveAnimation();
+            activeSpecies = speciesName;
+
+            // Instantiates markers with opacity 0
+            activeMarkers = records.map(r => {
+                const doy = getDayOfYear(r.observed_on || r.created_at || r.date, r.id);
+                const marker = L.circleMarker([r.latitude, r.longitude], {
+                    radius: 7,
+                    fillColor: color,
+                    color: '#ffffff',
+                    weight: 1.5,
+                    opacity: 0,
+                    fillOpacity: 0
+                }).addTo(map);
+
+                marker.bindPopup(`<b>${speciesName}</b><br>Observed Day of Year: ${doy}`);
+                return { marker, doy };
+            });
+
+            currentDay = 1;
+
+            function renderFrame() {
+                currentDay += ANIMATION_SPEED;
+                if (currentDay > 366) currentDay = 1; // Loop animation back to day 1
+
+                const displayDay = Math.floor(currentDay);
+                dayDisplay.innerText = `Day ${displayDay} / 366`;
+                timelineSlider.value = displayDay;
+                
+                // Update marker opacities based on decay window
+                activeMarkers.forEach(item => {
+                    let age = currentDay - item.doy;
+                    
+                    // Allow smooth loop decay across year boundary
+                    if (age < 0 && (currentDay + 366 - item.doy) <= DECAY_DAYS) {
+                        age = currentDay + 366 - item.doy;
+                    }
+
+                    if (age >= 0 && age <= DECAY_DAYS) {
+                        // Decay ratio: 1.0 (newly popped up) down to 0.0 (fully decayed)
+                        const opacity = 1-(age / DECAY_DAYS);
+                        const radius = 9//7 * (1 - 0.25 * (age / DECAY_DAYS)); // slight shrink effect
+
+                        item.marker.setStyle({
+                            opacity: opacity,
+                            fillOpacity: opacity * 0.85,
+                            radius: radius
+                        });
+                    } else {
+                        item.marker.setStyle({
+                            opacity: 0,
+                            fillOpacity: 0
+                        });
+                    }
+                });
+
+                animationFrameId = requestAnimationFrame(renderFrame);
+            }
+
+            renderFrame();
+        }
+
+        // Manual Timeline Slider Scrubbing
+        timelineSlider.oninput = (e) => {
+            currentDay = parseFloat(e.target.value);
+            dayDisplay.innerText = `Day ${Math.floor(currentDay)} / 366`;
+        };
+
+        // Load CSV Data
+        Papa.parse('big_data.csv', {
+            download: true,
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: res => processCSV(res.data),
+            error: () => {
+                Papa.parse('data/berkeley_full_data.csv', {
+                    download: true,
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: res => processCSV(res.data)
+                });
+            }
+        });
+
+        function processCSV(data) {
+            document.getElementById('loading').style.display = 'none';
+            const speciesCounts = {};
+            const speciesRecords = {};
+
+            data.forEach(row => {
+                const name = row.common_name || row.scientific_name;
+                const lat = parseFloat(row.latitude);
+                const lng = parseFloat(row.longitude);
+
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    if (!speciesCounts[name]) {
+                        speciesCounts[name] = 0;
+                        speciesRecords[name] = [];
+                    }
+                    speciesCounts[name]++;
+                    speciesRecords[name].push(row);
+                }
+            });
+
+            const top10 = Object.keys(speciesCounts)
+                .sort((a, b) => speciesCounts[b] - speciesCounts[a])
+                .slice(0, 10);
+
+            const container = document.getElementById('button-container');
+
+            top10.forEach((name, i) => {
+                const records = speciesRecords[name];
+                const color = speciesColors[i % speciesColors.length];
+                const sciName = records[0]?.scientific_name || '';
+                const fallbackImg = records.find(r => r.image_url)?.image_url || '';
+
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.innerHTML = `
+                    <div class="btn-left">
+                        <img class="species-img" src="https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg" alt="${name}">
+                        <div class="species-info">
+                            <span class="common-name">${name}</span>
+                            <span class="scientific-name">${sciName}</span>
+                        </div>
+                    </div>
+                    <span class="count-badge">${records.length}</span>
+                `;
+
+                fetchSpeciesImage(sciName, fallbackImg).then(src => {
+                    const img = btn.querySelector('.species-img');
+                    if (img) img.src = src;
+                });
+
+                btn.onclick = () => {
+                    if (activeSpecies === name) {
+                        clearActiveAnimation();
+                    } else {
+                        btn.classList.add('active');
+                        startSpeciesAnimation(name, records, color);
+                    }
+                };
+
+                container.appendChild(btn);
+            });
+        }
+    </script>
+</body>
+</html>

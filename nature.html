@@ -192,7 +192,7 @@
             // Get top 5 species sorted by total observations
             const top5Species = Object.keys(speciesCounts)
                 .sort((a, b) => speciesCounts[b] - speciesCounts[a])
-                .slice(0, 5);
+                .slice(0, 30);
 
             const buttonContainer = document.getElementById('button-container');
 
