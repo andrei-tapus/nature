@@ -192,7 +192,7 @@
         const map = L.map('map').setView([37.8712, -122.2640], 17);
 
         // Stadia Maps Stamen Watercolor Base Layer
-        L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key=YOUR-API-KEY', {
+        L.tileLayer('https://tiles.stadiamaps.com/tiles/outdoors/{z}/{x}/{y}{r}.png',{//'https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key=YOUR-API-KEY', {
             maxZoom: 18,
             opacity: 0.65,
             className: 'watercolor_map',
@@ -331,7 +331,7 @@
         };
 
         // Load CSV Data
-        Papa.parse('big_data.csv', {
+        Papa.parse('data/berkeley_full_data.csv', {
             download: true,
             header: true,
             dynamicTyping: true,
@@ -370,7 +370,7 @@
 
             const top10 = Object.keys(speciesCounts)
                 .sort((a, b) => speciesCounts[b] - speciesCounts[a])
-                .slice(0, 10);
+                .slice(0, 20);
 
             const container = document.getElementById('button-container');
 

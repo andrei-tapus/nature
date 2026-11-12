@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UC Berkeley Species Monthly Timeline</title>
+    
+    <!-- Leaflet CSS -->
+    <link 
+        rel="stylesheet" 
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="" 
+    />
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        /* Species Selection Panel (Top-Right) */
+        #controls {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(6px);
+            padding: 16px;
+            border-radius: 10px;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+            width: 310px;
+            max-height: calc(100vh - 145px);
+            overflow-y: auto;
+        }
+        #controls h4 {
+            margin: 0 0 4px 0;
+            font-size: 15px;
+            color: #222;
+        }
+        #controls p {
+            margin: 0 0 12px 0;
+            font-size: 11px;
+            color: #666;
+        }
+
+        /* Separate Floating Calendar Slider Element (Bottom-Center) */
+        #calendar-panel {
+            position: absolute;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            padding: 12px 18px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            width: min(560px, calc(100vw - 40px));
+            box-sizing: border-box;
+        }
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .timeline-title-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .timeline-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #444;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+        #month-display {
+            font-size: 13px;
+            font-weight: 700;
+            color: #005587;
+            background: #e8f3fa;
+            padding: 2px 10px;
+            border-radius: 12px;
+            min-width: 78px;
+            text-align: center;
+        }
+        #play-pause-btn {
+            background: #005587;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        #play-pause-btn:hover {
+            background: #003f66;
+        }
+        #timeline-slider {
+            width: 100%;
+            margin: 4px 0 2px 0;
+            cursor: pointer;
+            accent-color: #005587;
+        }
+        .month-ticks {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #666;
+            padding: 0 2px;
+            user-select: none;
+        }
+
+        /* Species Buttons */
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 8px;
+            border: 2px solid #e0e0e0;
+            background-color: #ffffff;
+            color: #333;
+            font-weight: 600;
+            font-size: 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        .btn:hover {
+            border-color: #005587;
+            background-color: #f0f7ff;
+        }
+        .btn.active {
+            border-color: #005587;
+            background-color: #005587;
+            color: #fff;
+        }
+        .btn-left {
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+        .species-img {
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            object-fit: cover;
+            margin-right: 10px;
+            flex-shrink: 0;
+            background-color: #eee;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        .species-info {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .common-name {
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .scientific-name {
+            font-size: 10px;
+            font-style: italic;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .count-badge {
+            background: rgba(0, 0, 0, 0.08);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .btn.active .count-badge {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+        #loading {
+            font-size: 12px;
+            color: #888;
+            font-style: italic;
+        }
+        #controls::-webkit-scrollbar {
+            width: 6px;
+        }
+        #controls::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Separate Species Buttons Panel -->
+    <div id="controls">
+        <h4>Top 20 Campus Species</h4>
+        <p>Click a species to animate observations grouped by month.</p>
+        <div id="loading">Loading CSV data...</div>
+        <div id="button-container"></div>
+    </div>
+
+    <!-- Separate Calendar Slider Element -->
+    <div id="calendar-panel">
+        <div class="timeline-header">
+            <div class="timeline-title-group">
+                <span class="timeline-label">Calendar Timeline</span>
+                <span id="month-display">January</span>
+            </div>
+            <button id="play-pause-btn" type="button">Pause</button>
+        </div>
+        <input type="range" id="timeline-slider" min="1" max="12.99" value="1" step="0.01">
+        <div class="month-ticks">
+            <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span>
+            <span>May</span><span>Jun</span><span>Jul</span><span>Aug</span>
+            <span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script 
+        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+        crossorigin="">
+    </script>
+
+    <!-- PapaParse CSV Reader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <script>
+        // Map setup
+        const map = L.map('map').setView([37.8712, -122.2640], 17);
+
+        // Stadia Maps Stamen Watercolor Base Layer
+        L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_watercolor/{z}/{x}/{y}.jpg?api_key=YOUR-API-KEY', {
+            maxZoom: 18,
+            opacity: 0.65,
+            attribution: '&copy; <a href="https://stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://stamen.com/" target="_blank">Stamen Design</a>'
+        }).addTo(map);
+
+        // 20 distinct colors for the top 20 species
+        const speciesColors = [
+            '#d95f02', '#7570b3', '#e7298a', '#2b83ba', '#1b9e77',
+            '#e6ab02', '#a6761d', '#666666', '#d9381e', '#377eb8',
+            '#984ea3', '#ff7f00', '#4daf4a', '#f781bf', '#8dd3c7',
+            '#fb8072', '#80b1d3', '#fdb462', '#b3de69', '#bc80bd'
+        ];
+
+        const MONTH_NAMES = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+
+        // Animation State Variables
+        let activeMarkers = [];
+        let animationFrameId = null;
+        let currentMonth = 1.0; // Continuous value from 1.0 (start of Jan) to 13.0 (end of Dec)
+        let activeSpecies = null;
+        let isPaused = false;
+        
+        // Smooth Fade Envelope Configuration:
+        // Markers fade in over HALF_WINDOW months before their peak and fade out over HALF_WINDOW months after.
+        const HALF_WINDOW = 1.25;      // 1.25 months fade-in + 1.25 months fade-out = 2.5 months total smooth curve
+        const ANIMATION_SPEED = 0.024; // Gentle pace (~16 seconds per full year)
+
+        const monthDisplay = document.getElementById('month-display');
+        const timelineSlider = document.getElementById('timeline-slider');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+
+        // Helper: Convert Date String to Month (1 = January ... 12 = December)
+        function getMonthOfYear(dateStr, fallbackId) {
+            if (dateStr) {
+                const str = String(dateStr).trim();
+                const isoMatch = str.match(/^\d{4}-(\d{1,2})/);
+                if (isoMatch) {
+                    const m = parseInt(isoMatch[1], 10);
+                    if (m >= 1 && m <= 12) return m;
+                }
+                const parsed = new Date(str);
+                if (!isNaN(parsed.getTime())) {
+                    return parsed.getUTCMonth() + 1;
+                }
+            }
+            return ((Math.abs(fallbackId || 0) * 7) % 12) + 1;
+        }
+
+        // Helper: Fetch thumbnail from Wikispecies (with Wikipedia / CSV fallback)
+        async function fetchSpeciesImage(sciName, fallbackImg) {
+            if (sciName) {
+                try {
+                    const url = `https://species.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(sciName)}&prop=pageimages&pithumbsize=100&redirects=1&format=json&origin=*`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const pages = data?.query?.pages;
+                    if (pages) {
+                        for (const k in pages) {
+                            if (pages[k]?.thumbnail?.source) return pages[k].thumbnail.source;
+                        }
+                    }
+                } catch (e) {}
+
+                try {
+                    const wpUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(sciName)}&prop=pageimages&pithumbsize=100&redirects=1&format=json&origin=*`;
+                    const res = await fetch(wpUrl);
+                    const data = await res.json();
+                    const pages = data?.query?.pages;
+                    if (pages) {
+                        for (const k in pages) {
+                            if (pages[k]?.thumbnail?.source) return pages[k].thumbnail.source;
+                        }
+                    }
+                } catch (e) {}
+            }
+            return fallbackImg || 'https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg';
+        }
+
+        // Stop current animation loop and clear map markers
+        function clearActiveAnimation() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            activeMarkers.forEach(item => map.removeLayer(item.marker));
+            activeMarkers = [];
+            activeSpecies = null;
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+        }
+
+        // Smoothly update marker opacity and radius using a symmetric cosine-squared bell curve
+        function updateMarkersForMonth(monthPos) {
+            const monthIndex = Math.min(12, Math.max(1, Math.floor(monthPos)));
+            monthDisplay.innerText = MONTH_NAMES[monthIndex - 1];
+            timelineSlider.value = Math.min(12.99, monthPos).toFixed(2);
+
+            activeMarkers.forEach(item => {
+                // Center each month's peak at the middle of that month (e.g., 1.5 for January)
+                const peakMonth = item.month + 0.5;
+
+                // Shortest signed circular distance across the 12-month cycle
+                let diff = monthPos - peakMonth;
+                if (diff > 6) diff -= 12;
+                if (diff < -6) diff += 12;
+
+                if (Math.abs(diff) < HALF_WINDOW) {
+                    // Normalized distance u in (-1, 1); cos^2(pi/2 * u) smoothly eases in from 0 to 1 and eases out to 0
+                    const u = diff / HALF_WINDOW;
+                    const c = Math.cos((Math.PI / 2) * u);
+                    const intensity = c * c;
+
+                    const radius = 3.5 + 4.5 * intensity; // Grows gently from 3.5px to 8px and shrinks back
+
+                    item.marker.setStyle({
+                        opacity: intensity,
+                        fillOpacity: intensity * 0.85,
+                        radius: radius
+                    });
+                } else {
+                    item.marker.setStyle({
+                        opacity: 0,
+                        fillOpacity: 0,
+                        radius: 3.5
+                    });
+                }
+            });
+        }
+
+        function startAnimationLoop() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            isPaused = false;
+            playPauseBtn.innerText = 'Pause';
+
+            function renderFrame() {
+                if (!isPaused) {
+                    currentMonth += ANIMATION_SPEED;
+                    if (currentMonth >= 13.0) {
+                        currentMonth -= 12.0; // Seamless wrap-around from end of Dec to start of Jan
+                    }
+                    updateMarkersForMonth(currentMonth);
+                }
+                animationFrameId = requestAnimationFrame(renderFrame);
+            }
+
+            renderFrame();
+        }
+
+        // Main Animation Runner
+        function startSpeciesAnimation(speciesName, records, color) {
+            clearActiveAnimation();
+            activeSpecies = speciesName;
+
+            // Instantiate markers completely transparent
+            activeMarkers = records.map(r => {
+                const month = getMonthOfYear(r.observed_on || r.created_at || r.date || r.month, r.id);
+                const marker = L.circleMarker([r.latitude, r.longitude], {
+                    radius: 3.5,
+                    fillColor: color,
+                    color: '#ffffff',
+                    weight: 1.5,
+                    opacity: 0,
+                    fillOpacity: 0
+                }).addTo(map);
+
+                marker.bindPopup(`<b>${speciesName}</b><br>Observed Month: ${MONTH_NAMES[month - 1]}`);
+                return { marker, month };
+            });
+
+            currentMonth = 1.0;
+            updateMarkersForMonth(currentMonth);
+            startAnimationLoop();
+        }
+
+        // Manual Calendar Slider Scrubbing
+        timelineSlider.oninput = (e) => {
+            isPaused = true;
+            playPauseBtn.innerText = 'Play';
+            currentMonth = parseFloat(e.target.value);
+            updateMarkersForMonth(currentMonth);
+        };
+
+        // Play / Pause Button
+        playPauseBtn.onclick = () => {
+            if (!activeSpecies) return;
+            if (isPaused) {
+                startAnimationLoop();
+            } else {
+                isPaused = true;
+                playPauseBtn.innerText = 'Play';
+            }
+        };
+
+        // Load CSV Data
+        Papa.parse('data/berkeley_full_data.csv', {
+            download: true,
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: res => processCSV(res.data),
+            error: () => {
+                Papa.parse('small_data.csv', {
+                    download: true,
+                    header: true,
+                    dynamicTyping: true,
+                    skipEmptyLines: true,
+                    complete: res => processCSV(res.data)
+                });
+            }
+        });
+
+        function processCSV(data) {
+            document.getElementById('loading').style.display = 'none';
+            const speciesCounts = {};
+            const speciesRecords = {};
+
+            data.forEach(row => {
+                const name = row.common_name || row.scientific_name;
+                const lat = parseFloat(row.latitude);
+                const lng = parseFloat(row.longitude);
+
+                if (name && !isNaN(lat) && !isNaN(lng)) {
+                    if (!speciesCounts[name]) {
+                        speciesCounts[name] = 0;
+                        speciesRecords[name] = [];
+                    }
+                    speciesCounts[name]++;
+                    speciesRecords[name].push(row);
+                }
+            });
+
+            // Select top 20 species by observation count
+            const top20 = Object.keys(speciesCounts)
+                .sort((a, b) => speciesCounts[b] - speciesCounts[a])
+                .slice(0, 20);
+
+            const container = document.getElementById('button-container');
+
+            top20.forEach((name, i) => {
+                const records = speciesRecords[name];
+                const color = speciesColors[i % speciesColors.length];
+                const sciName = records[0]?.scientific_name || '';
+                const fallbackImg = records.find(r => r.image_url)?.image_url || '';
+
+                const btn = document.createElement('button');
+                btn.className = 'btn';
+                btn.innerHTML = `
+                    <div class="btn-left">
+                        <img class="species-img" src="https://upload.wikimedia.org/wikipedia/commons/a/ac/No_image_available.svg" alt="${name}">
+                        <div class="species-info">
+                            <span class="common-name">${name}</span>
+                            <span class="scientific-name">${sciName}</span>
+                        </div>
+                    </div>
+                    <span class="count-badge">${records.length}</span>
+                `;
+
+                fetchSpeciesImage(sciName, fallbackImg).then(src => {
+                    const img = btn.querySelector('.species-img');
+                    if (img) img.src = src;
+                });
+
+                btn.onclick = () => {
+                    if (activeSpecies === name) {
+                        clearActiveAnimation();
+                    } else {
+                        clearActiveAnimation();
+                        btn.classList.add('active');
+                        startSpeciesAnimation(name, records, color);
+                    }
+                };
+
+                container.appendChild(btn);
+            });
+        }
+    </script>
+</body>
+</html>
